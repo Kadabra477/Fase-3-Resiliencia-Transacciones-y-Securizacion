@@ -1,0 +1,32 @@
+const { MongoClient } = require('mongodb');
+
+// Conexión apuntando a los nodos del Replica Set
+const uri = "mongodb://localhost:27017,localhost:27018/sistema_reservas?replicaSet=rs0";
+const client = new MongoClient(uri);
+
+async function run() {
+  try {
+    await client.connect();
+    console.log("Conectado al Replica Set para prueba de resiliencia y failover.");
+    const database = client.db("sistema_reservas");
+    const collection = database.collection("logs_failover");
+
+    let i = 0;
+    while (i < 30) {
+      i++;
+      try {
+        const timestamp = new Date();
+        await collection.insertOne({ intento: i, fecha: timestamp });
+        console.log(`[ÉXITO] Registro insertado #${i} a las ${timestamp.toLocaleTimeString()}`);
+      } catch (error) {
+        console.log(`[AVISO] Inserción #${i} reintentando por proceso de elección de líder:`, error.message);
+      }
+      // Pausa de 1 segundo entre inserciones
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  } finally {
+    await client.close();
+  }
+}
+
+run().catch(console.dir);

@@ -1,0 +1,72 @@
+const { MongoClient } = require('mongodb');
+
+// Conexión al Replica Set
+const uri = "mongodb://localhost:27017,localhost:27018/sistema_reservas?replicaSet=rs0";
+const client = new MongoClient(uri);
+
+async function realizarReservaSegura(eventoId, usuarioId, cantidadAsientos) {
+  const session = client.startSession();
+  
+  try {
+    session.startTransaction();
+    console.log("-> Transacción iniciada: Verificando disponibilidad de cupos...");
+
+    const db = client.db("sistema_reservas");
+    const eventosCollection = db.collection("eventos");
+    const reservasCollection = db.collection("reservas");
+
+    // 1. Consultar el evento y verificar stock disponible
+    const evento = await eventosCollection.findOne({ _id: eventoId }, { session });
+    if (!evento) {
+      throw new Error("El evento especificado no existe.");
+    }
+
+    if (evento.cuposDisponibles < cantidadAsientos) {
+      throw new Error(`Stock insuficiente. Quedan ${evento.cuposDisponibles} cupos y se solicitaron ${cantidadAsientos}.`);
+    }
+
+    // 2. Descontar los cupos del evento
+    await eventosCollection.updateOne(
+      { _id: eventoId },
+      { $inc: { cuposDisponibles: -cantidadAsientos } },
+      { session }
+    );
+
+    // 3. Crear el documento de la reserva en paralelo
+    const nuevaReserva = {
+      eventoId: eventoId,
+      usuarioId: usuarioId,
+      asientos: cantidadAsientos,
+      fechaReserva: new Date(),
+      estado: "CONFIRMADA"
+    };
+
+    const resultadoReserva = await reservasCollection.insertOne(nuevaReserva, { session });
+
+    // Confirmar transacción (Commit)
+    await session.commitTransaction();
+    console.log("¡Transacción completada con éxito! (COMMIT aplicado). ID de reserva:", resultadoReserva.insertedId);
+
+  } catch (error) {
+    // Revertir cambios en caso de error (Rollback)
+    await session.abortTransaction();
+    console.error("[-] Error en la transacción. Se ejecutó un ROLLBACK completo:", error.message);
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function run() {
+  try {
+    await client.connect();
+    console.log("Conectado a la base de datos para pruebas de transacciones ACID.");
+    
+    // Ejemplo de ejecución (ajustar IDs reales de tu base de datos si se requiere)
+    // await realizarReservaSegura(ObjectId("..."), "usuario_test", 2);
+
+  } finally {
+    await client.close();
+  }
+}
+
+run().catch(console.dir);
