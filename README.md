@@ -1,22 +1,37 @@
 # Reporte Técnico - Fase 3: Resiliencia, Transacciones y Securización
 
-## 1. Diagrama de Arquitectura
-El sistema se conecta a un clúster distribuido de MongoDB configurado bajo un modelo de Alta Disponibilidad (Replica Set).
 
-+-------------------------------------------------------------+
-|                 Aplicación Node.js / Cliente                |
-+------------------------------+------------------------------+
-|
-Conexión con Replica Set (rs0)
-|
-+----------------------+----------------------+
-|                      |                      |
-v                      v                      v
-+--------------+       +--------------+       +--------------+
-|    Nodo 1    | <---> |    Nodo 2    | <---> |    Nodo 3    |
-|  (Primario)  |       | (Secundario) |       |  (Árbitro)   |
-|  Puerto 27017|       |  Puerto 27018|       |  Puerto 27019|
-+--------------+       +--------------+       +--------------+
+## 1. Diagrama de Arquitectura
+
+El sistema utiliza un clúster distribuido de MongoDB configurado como un Replica Set (`rs0`) para proporcionar alta disponibilidad y tolerancia a fallos.
+
+```mermaid
+flowchart TB
+    APP["Aplicación Node.js<br/>Cliente de reservas"]
+    RS["MongoDB Replica Set (rs0)"]
+
+    P["Nodo 1 - Primario<br/>Puerto 27017"]
+    S["Nodo 2 - Secundario<br/>Puerto 27018"]
+    A["Nodo 3 - Árbitro<br/>Puerto 27019"]
+
+    APP --> RS
+    RS --> P
+    RS --> S
+    RS --> A
+
+    P <-->|"Replicación"| S
+    P -.->|"Elecciones"| A
+    S -.->|"Votación"| A
+
+    classDef primary fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef secondary fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef arbiter fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+
+    class P primary
+    class S secondary
+    class A arbiter
+```
+
 
 ## 2. Bitácora del Failover
 * **Estado Inicial:** El nodo Primario (puerto `27017`) procesa las operaciones de escritura y lectura de la aplicación de reservas. Los nodos Secundario y Árbitro sincronizan el estado mediante latidos continuos (*heartbeats*).
